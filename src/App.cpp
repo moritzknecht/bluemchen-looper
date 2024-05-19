@@ -47,6 +47,7 @@ CrossFade    fadeLeft;
 CrossFade    fadeRight;
 Parameter    cv1;
 Parameter    cv2;
+float        cv1Value = 0;
 
 // Map a control value from one range to another
 float mapControl(float x,
@@ -61,7 +62,6 @@ float mapControl(float x,
 // Update the OLED display with current information
 void UpdateOled()
 {
-    hw.ProcessAllControls();
     hw.display.Fill(false);
 
     hw.display.SetCursor(0, 0);
@@ -70,19 +70,19 @@ void UpdateOled()
     sprintf(cstr, "seqStep %ld", steppedClock.GetStep());
     hw.display.WriteString(cstr, Font_6x8, true);
 
-    hw.display.SetCursor(0, 24);
-    std::string str3  = "stepsRecorded  ";
+    hw.display.SetCursor(0, 8);
+    std::string str3  = "rec  ";
     char       *cstr3 = &str3[0];
-    sprintf(cstr3, "stepsRecorded %d", loopRecorded);
+    sprintf(cstr3, "rec %d", loopRecorded);
     hw.display.WriteString(cstr3, Font_6x8, true);
 
-    hw.display.SetCursor(0, 36);
+    hw.display.SetCursor(0, 16);
     std::string str4  = "play  ";
     char       *cstr4 = &str4[0];
     sprintf(cstr4, "state %d", (int)looper_l.GetState());
     hw.display.WriteString(cstr4, Font_6x8, true);
 
-    hw.display.SetCursor(0, 48);
+    hw.display.SetCursor(0, 24);
     std::string str5  = "bars  ";
     char       *cstr5 = &str5[0];
     sprintf(cstr5, "bars %d", (int)(loopLength / 16));
@@ -91,15 +91,6 @@ void UpdateOled()
     hw.display.Update();
 }
 
-// Update the controls by processing the inputs
-void UpdateControls()
-{
-    hw.ProcessAllControls();
-    knob1.Process();
-    knob2.Process();
-    cv1.Process();
-    cv2.Process();
-}
 
 // Audio callback function for processing audio and control updates
 void AudioCallback(AudioHandle::InputBuffer  in,
@@ -108,8 +99,10 @@ void AudioCallback(AudioHandle::InputBuffer  in,
 {
     // Process the controls
     hw.ProcessAllControls();
-    bool  clock   = cv1.Process() > 0.2;
-    bool  reset   = cv2.Process() > 0.2;
+
+    cv1Value      = cv1.Process();
+    bool  clock   = cv1Value > 0.8;
+    bool  reset   = cv2.Process() > 0.8;
     bool  newStep = steppedClock.Process(clock, reset);
     float cutoff  = knob1.Process();
     float cutoff2 = knob2.Process();
@@ -153,6 +146,7 @@ void AudioCallback(AudioHandle::InputBuffer  in,
         {
             looper_l.TrigRecord();
             looper_r.TrigRecord();
+            crossFaderPos = 1;
             fadeLeft.SetPos(1.0);
             fadeRight.SetPos(1.0);
         }
@@ -172,6 +166,7 @@ void AudioCallback(AudioHandle::InputBuffer  in,
     {
         looper_l.Clear();
         looper_r.Clear();
+        crossFaderPos = 0;
         fadeLeft.SetPos(0.0);
         fadeRight.SetPos(0.0);
     }
@@ -196,7 +191,8 @@ void AudioCallback(AudioHandle::InputBuffer  in,
     }
 
     if(hw.encoder.Increment() && hw.encoder.TimeHeldMs() <= 0
-       && looper_l.GetState() == AudioLooper::State::STOPPED)
+       && (looper_l.GetState() == AudioLooper::State::STOPPED
+           || looper_l.GetState() == AudioLooper::State::EMPTY))
     {
         loopLengthPos += hw.encoder.Increment();
         loopLengthPos = (loopLengthPos % 6 + 6) % 6;
@@ -205,9 +201,9 @@ void AudioCallback(AudioHandle::InputBuffer  in,
        && looper_l.GetState() != AudioLooper::State::STOPPED)
     {
         int newValue = crossFaderPos + hw.encoder.Increment();
-        if(newValue > 10)
+        if(newValue > 100)
         {
-            newValue = 10;
+            newValue = 100;
         }
         else if(newValue < 0)
         {
@@ -215,16 +211,16 @@ void AudioCallback(AudioHandle::InputBuffer  in,
         }
 
         crossFaderPos = newValue;
-        fadeLeft.SetPos(crossFaderPos / 10);
-        fadeRight.SetPos(crossFaderPos / 10);
+        fadeLeft.SetPos(crossFaderPos / 100);
+        fadeRight.SetPos(crossFaderPos / 100);
     }
-
+    /*
     reverb.set_amount(mapControl(cutoff, 20, 20000, 0, 1));
     reverb.set_diffusion(0.625f);
     reverb.set_time(0.35f + 0.63f * 0.2);
     reverb.set_input_gain(0.2f);
     reverb.set_lp(0.3f + 0.5 * 0.6f);
-
+    */
     // Process audio signals
     for(size_t i = 0; i < size; i++)
     {
@@ -255,8 +251,9 @@ int main(void)
     hw.Init();
     hw.StartAdc();
     reverb.Init(reverb_buffer);
-    knob1.Init(hw.controls[1], 20, 20000, Parameter::LOGARITHMIC);
-    knob2.Init(hw.controls[2], 20, 20000, Parameter::LOGARITHMIC);
+
+    knob1.Init(hw.controls[hw.CTRL_1], 20, 20000, Parameter::LOGARITHMIC);
+    knob2.Init(hw.controls[hw.CTRL_2], 20, 20000, Parameter::LOGARITHMIC);
     steppedClock.SetAutoReset(true);
     cv1.Init(hw.controls[hw.CTRL_3], 0.001f, 1.0f, Parameter::LINEAR);
     cv2.Init(hw.controls[hw.CTRL_4], 0.001f, 1.0f, Parameter::LINEAR);
@@ -280,6 +277,7 @@ int main(void)
     fadeRight.Init(CROSSFADE_CPOW);
 
     hw.StartAudio(AudioCallback);
+
     while(1)
     {
         UpdateOled();
