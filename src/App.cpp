@@ -61,6 +61,7 @@ float mapControl(float x,
 // Update the OLED display with current information
 void UpdateOled()
 {
+    hw.ProcessAllControls();
     hw.display.Fill(false);
 
     hw.display.SetCursor(0, 0);
@@ -203,6 +204,19 @@ void AudioCallback(AudioHandle::InputBuffer  in,
     if(hw.encoder.Increment() && hw.encoder.TimeHeldMs() <= 0
        && looper_l.GetState() != AudioLooper::State::STOPPED)
     {
+        int newValue = crossFaderPos + hw.encoder.Increment();
+        if(newValue > 10)
+        {
+            newValue = 10;
+        }
+        else if(newValue < 0)
+        {
+            newValue = 0;
+        }
+
+        crossFaderPos = newValue;
+        fadeLeft.SetPos(crossFaderPos / 10);
+        fadeRight.SetPos(crossFaderPos / 10);
     }
 
     reverb.set_amount(mapControl(cutoff, 20, 20000, 0, 1));
@@ -266,4 +280,8 @@ int main(void)
     fadeRight.Init(CROSSFADE_CPOW);
 
     hw.StartAudio(AudioCallback);
+    while(1)
+    {
+        UpdateOled();
+    }
 }
