@@ -13,9 +13,12 @@ using namespace audiolooper;
 
 Bluemchen hw;
 
-// Define the audio buffer size to accommodate 60 seconds of audio at 48kHz sampling rate
-#define kBuffSize 48000 * 60 // 60 seconds at 48kHz
 
+// Define the audio buffer size to accommodate 60 seconds of audio at 96kHz sampling rate
+#define kBuffSize 48000 * 87 // 87 seconds at 96kHz
+#define CROSSFADER_RESOLUTION 30
+#define TRIG_TRESHOLD 3500
+#define TRIG_TRESHOLD_LOW 200
 // Allocate memory for the left and right audio buffers
 float DSY_SDRAM_BSS buffer_l[kBuffSize];
 float DSY_SDRAM_BSS buffer_r[kBuffSize];
@@ -25,12 +28,16 @@ uint16_t reverb_buffer[32768];
 
 // Initialize control variables
 bool shouldRecord  = false;
-int  loopLength    = 16;
+int  loopLength    = 64;
 int  loopRecorded  = 0;
 int  crossFaderPos = 0;
-int  loopLengthPos = 0;
-int  channel       = 0;
-bool preventClear  = false;
+int  loopLengthPos = 3;
+
+bool  preventClear = false;
+float last_cv1     = 0.0f;
+float last_cv2     = 0.0f;
+bool  trig         = false;
+bool  reset        = false;
 
 // Instantiate DSP components and parameters
 SteppedClock steppedClock;
@@ -47,7 +54,7 @@ CrossFade    fadeLeft;
 CrossFade    fadeRight;
 Parameter    cv1;
 Parameter    cv2;
-float        cv1Value = 0;
+
 
 // Map a control value from one range to another
 float mapControl(float x,
@@ -65,11 +72,17 @@ void UpdateOled()
     hw.display.Fill(false);
 
     hw.display.SetCursor(0, 0);
-    std::string str  = "seqStep  ";
+    std::string str  = "s ";
     char       *cstr = &str[0];
-    sprintf(cstr, "seqStep %ld", steppedClock.GetStep());
+    sprintf(cstr, "s %ld", steppedClock.GetStep());
     hw.display.WriteString(cstr, Font_6x8, true);
-
+    /*
+    hw.display.SetCursor(0, 0);
+    std::string str6  = "t ";
+    char       *cstr6 = &str6[0];
+    sprintf(cstr6, "t %d", cv1Val);
+    hw.display.WriteString(cstr6, Font_6x8, true);
+*/
     hw.display.SetCursor(0, 8);
     std::string str3  = "rec  ";
     char       *cstr3 = &str3[0];
@@ -77,9 +90,9 @@ void UpdateOled()
     hw.display.WriteString(cstr3, Font_6x8, true);
 
     hw.display.SetCursor(0, 16);
-    std::string str4  = "play  ";
+    std::string str4  = "cf  ";
     char       *cstr4 = &str4[0];
-    sprintf(cstr4, "state %d", (int)looper_l.GetState());
+    sprintf(cstr4, "cf %d", crossFaderPos);
     hw.display.WriteString(cstr4, Font_6x8, true);
 
     hw.display.SetCursor(0, 24);
@@ -100,10 +113,37 @@ void AudioCallback(AudioHandle::InputBuffer  in,
     // Process the controls
     hw.ProcessAllControls();
 
-    cv1Value      = cv1.Process();
-    bool  clock   = cv1Value > 0.8;
-    bool  reset   = cv2.Process() > 0.8;
-    bool  newStep = steppedClock.Process(clock, reset);
+
+    float cv1_val = cv1.Process();
+    trig          = false;
+    if(cv1_val >= TRIG_TRESHOLD && last_cv1 < TRIG_TRESHOLD)
+    {
+        trig = true;
+    }
+    else if(cv1_val < TRIG_TRESHOLD && last_cv1 >= TRIG_TRESHOLD)
+    {
+        // CV1 input has crossed the threshold downwards
+        trig = false;
+    }
+    last_cv1 = cv1_val;
+
+    float cv2_val = cv2.Process();
+    reset         = false;
+    if(cv2_val >= TRIG_TRESHOLD && last_cv2 < TRIG_TRESHOLD)
+    {
+        // cv2 input has crossed the threshold upwards
+        // Trigger your event here (e.g., toggling an LED)
+        reset = true;
+    }
+    else if(cv2_val < TRIG_TRESHOLD && last_cv2 >= TRIG_TRESHOLD)
+    {
+        // cv2 input has crossed the threshold downwards
+        reset = false;
+    }
+    last_cv2 = cv2_val;
+
+
+    bool  newStep = steppedClock.Process(trig, reset);
     float cutoff  = knob1.Process();
     float cutoff2 = knob2.Process();
 
@@ -133,7 +173,7 @@ void AudioCallback(AudioHandle::InputBuffer  in,
     }
 
     // Toggle recording state on encoder press
-    if(hw.encoder.FallingEdge())
+    if(hw.encoder.FallingEdge() && hw.encoder.TimeHeldMs() <= 0.f)
     {
         shouldRecord = true;
     }
@@ -146,7 +186,7 @@ void AudioCallback(AudioHandle::InputBuffer  in,
         {
             looper_l.TrigRecord();
             looper_r.TrigRecord();
-            crossFaderPos = 1;
+            crossFaderPos = CROSSFADER_RESOLUTION;
             fadeLeft.SetPos(1.0);
             fadeRight.SetPos(1.0);
         }
@@ -160,13 +200,18 @@ void AudioCallback(AudioHandle::InputBuffer  in,
         loopRecorded = 0;
     }
 
-    // Clear the loop if the button is held longer than 1000 ms
+    // Clear the loop if the button is held longer than CROSSFADER_RESOLUTION0 ms
     if(hw.encoder.TimeHeldMs() >= 1000.f && !hw.encoder.Increment()
        && !preventClear)
     {
+        shouldRecord = false;
+        looper_l.Stop();
+        looper_r.Stop();
         looper_l.Clear();
         looper_r.Clear();
+
         crossFaderPos = 0;
+        loopRecorded  = 0;
         fadeLeft.SetPos(0.0);
         fadeRight.SetPos(0.0);
     }
@@ -198,12 +243,13 @@ void AudioCallback(AudioHandle::InputBuffer  in,
         loopLengthPos = (loopLengthPos % 6 + 6) % 6;
     }
     if(hw.encoder.Increment() && hw.encoder.TimeHeldMs() <= 0
-       && looper_l.GetState() != AudioLooper::State::STOPPED)
+       && (looper_l.GetState() == AudioLooper::State::PLAYING
+           || looper_l.GetState() == AudioLooper::State::REC_FIRST))
     {
         int newValue = crossFaderPos + hw.encoder.Increment();
-        if(newValue > 100)
+        if(newValue > CROSSFADER_RESOLUTION)
         {
-            newValue = 100;
+            newValue = CROSSFADER_RESOLUTION;
         }
         else if(newValue < 0)
         {
@@ -211,8 +257,8 @@ void AudioCallback(AudioHandle::InputBuffer  in,
         }
 
         crossFaderPos = newValue;
-        fadeLeft.SetPos(crossFaderPos / 100);
-        fadeRight.SetPos(crossFaderPos / 100);
+        fadeLeft.SetPos((float)crossFaderPos / CROSSFADER_RESOLUTION);
+        fadeRight.SetPos((float)crossFaderPos / CROSSFADER_RESOLUTION);
     }
     /*
     reverb.set_amount(mapControl(cutoff, 20, 20000, 0, 1));
@@ -220,8 +266,11 @@ void AudioCallback(AudioHandle::InputBuffer  in,
     reverb.set_time(0.35f + 0.63f * 0.2);
     reverb.set_input_gain(0.2f);
     reverb.set_lp(0.3f + 0.5 * 0.6f);
-    */
+*/
+
     // Process audio signals
+
+    //float loop[2][size];
     for(size_t i = 0; i < size; i++)
     {
         float in_l = in[0][i];
@@ -238,31 +287,47 @@ void AudioCallback(AudioHandle::InputBuffer  in,
         sig_l = svf2_l.Low();
         sig_r = svf2_r.Low();
 
-        // reverb.Process(&sig_l, &sig_r, size);
-
+        //loop[0][i] = sig_l;
+        // loop[1][i] = sig_r;
         out[0][i] = fadeLeft.Process(in_l, sig_l);
         out[1][i] = fadeRight.Process(in_r, sig_r);
     }
+    // reverb.Process(loop[0], loop[1], size);
+    /*for(size_t i = 0; i < size; i++)
+    {
+        float in_l = in[0][i];
+        float in_r = in[1][i];
+        out[0][i]  = fadeLeft.Process(in_l, loop[0][i]);
+        out[1][i]  = fadeRight.Process(in_r, loop[1][i]);
+    }*/
 }
 
 // Main function to initialize hardware and start audio processing
 int main(void)
 {
     hw.Init();
+    // hw.SetAudioSampleRate(daisy::SaiHandle::Config::SampleRate::SAI_48KHZ);
     hw.StartAdc();
     reverb.Init(reverb_buffer);
 
     knob1.Init(hw.controls[hw.CTRL_1], 20, 20000, Parameter::LOGARITHMIC);
     knob2.Init(hw.controls[hw.CTRL_2], 20, 20000, Parameter::LOGARITHMIC);
-    steppedClock.SetAutoReset(true);
-    cv1.Init(hw.controls[hw.CTRL_3], 0.001f, 1.0f, Parameter::LINEAR);
-    cv2.Init(hw.controls[hw.CTRL_4], 0.001f, 1.0f, Parameter::LINEAR);
+    steppedClock.SetAutoReset(false);
+    cv1.Init(hw.controls[hw.CTRL_3], -5000.0f, 5000.0f, Parameter::EXPONENTIAL);
+    cv2.Init(hw.controls[hw.CTRL_4], -5000.0f, 5000.0f, Parameter::EXPONENTIAL);
 
     float samplerate = hw.AudioSampleRate();
+
     looper_l.Init(buffer_l, kBuffSize);
     looper_r.Init(buffer_r, kBuffSize);
+
+    looper_l.SetMode(audiolooper::AudioLooper::Mode::REPLACE);
+    looper_r.SetMode(audiolooper::AudioLooper::Mode::REPLACE);
     looper_l.Clear();
     looper_r.Clear();
+    looper_l.Stop();
+    looper_r.Stop();
+
     svf_l.Init(samplerate);
     svf_r.Init(samplerate);
     svf2_l.Init(samplerate);
