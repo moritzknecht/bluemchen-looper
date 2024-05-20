@@ -36,8 +36,6 @@ int  loopLengthPos = 3;
 bool  preventClear = false;
 float last_cv1     = 0.0f;
 float last_cv2     = 0.0f;
-bool  trig         = false;
-bool  reset        = false;
 
 // Instantiate DSP components and parameters
 SteppedClock steppedClock;
@@ -115,7 +113,7 @@ void AudioCallback(AudioHandle::InputBuffer  in,
 
 
     float cv1_val = cv1.Process();
-    trig          = false;
+    bool  trig    = false;
     if(cv1_val >= TRIG_TRESHOLD && last_cv1 < TRIG_TRESHOLD)
     {
         trig = true;
@@ -128,7 +126,7 @@ void AudioCallback(AudioHandle::InputBuffer  in,
     last_cv1 = cv1_val;
 
     float cv2_val = cv2.Process();
-    reset         = false;
+    bool  reset   = false;
     if(cv2_val >= TRIG_TRESHOLD && last_cv2 < TRIG_TRESHOLD)
     {
         // cv2 input has crossed the threshold upwards
@@ -149,8 +147,8 @@ void AudioCallback(AudioHandle::InputBuffer  in,
 
     svf_l.SetFreq(cutoff);
     svf_r.SetFreq(cutoff);
-    svf2_l.SetFreq(cutoff2);
-    svf2_r.SetFreq(cutoff2);
+    // svf2_l.SetFreq(cutoff2);
+    //svf2_r.SetFreq(cutoff2);
 
     // Map control to loop length
     float len  = mapControl((float)loopLengthPos, 0.0, 5.0, 0.5, 1.0);
@@ -173,7 +171,7 @@ void AudioCallback(AudioHandle::InputBuffer  in,
     }
 
     // Toggle recording state on encoder press
-    if(hw.encoder.FallingEdge() && hw.encoder.TimeHeldMs() <= 0.f)
+    if(hw.encoder.RisingEdge() && hw.encoder.TimeHeldMs() <= 0.f)
     {
         shouldRecord = true;
     }
@@ -289,8 +287,16 @@ void AudioCallback(AudioHandle::InputBuffer  in,
 
         //loop[0][i] = sig_l;
         // loop[1][i] = sig_r;
-        out[0][i] = fadeLeft.Process(in_l, sig_l);
-        out[1][i] = fadeRight.Process(in_r, sig_r);
+        float fade_l = fadeLeft.Process(in_l, sig_l);
+        float fade_r = fadeRight.Process(in_r, sig_r);
+
+        float mid  = 0.5f * (fade_l + fade_r);
+        float side = 0.5f * (fade_l - fade_r);
+
+        side *= cutoff2;
+
+        out[0][i] = mid + side;
+        out[1][i] = mid - side;
     }
     // reverb.Process(loop[0], loop[1], size);
     /*for(size_t i = 0; i < size; i++)
@@ -311,7 +317,9 @@ int main(void)
     reverb.Init(reverb_buffer);
 
     knob1.Init(hw.controls[hw.CTRL_1], 20, 20000, Parameter::LOGARITHMIC);
-    knob2.Init(hw.controls[hw.CTRL_2], 20, 20000, Parameter::LOGARITHMIC);
+    //knob2.Init(hw.controls[hw.CTRL_2], 20, 20000, Parameter::LOGARITHMIC);
+    knob2.Init(hw.controls[hw.CTRL_2], 0.0f, 2.0f, Parameter::LINEAR);
+
     steppedClock.SetAutoReset(false);
     cv1.Init(hw.controls[hw.CTRL_3], -5000.0f, 5000.0f, Parameter::EXPONENTIAL);
     cv2.Init(hw.controls[hw.CTRL_4], -5000.0f, 5000.0f, Parameter::EXPONENTIAL);
@@ -337,6 +345,8 @@ int main(void)
     svf_r.SetRes(0.0);
     svf2_l.SetRes(0.0);
     svf2_r.SetRes(0.0);
+    svf2_l.SetFreq(20000);
+    svf2_r.SetFreq(20000);
 
     fadeLeft.Init(CROSSFADE_CPOW);
     fadeRight.Init(CROSSFADE_CPOW);
