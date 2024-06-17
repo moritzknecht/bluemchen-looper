@@ -1,33 +1,32 @@
 # Project Name
 TARGET ?= Looper
 
-DEBUG = 1
-OPT = -O0
-
+DEBUG = 0
+OPT = -Os
 
 # Sources
-
-# example
-#CPP_SOURCES = src/kxmx_bluemchen.cpp examples/${TARGET}.cpp
 CPP_SOURCES += \
-bluemchen/kxmx_bluemchen.cpp \
 src/App.cpp \
 src/SteppedClock.cpp \
+lib/kxmx_bluemchen/src/kxmx_bluemchen.cpp \
+
 
 USE_FATFS = 0
 
 # Library Locations
-LIBDAISY_DIR = libDaisy
-DAISYSP_DIR = DaisySP
-STMLIB_DIR = stmlib
-CXXFLAGS += \
--DBLUEMCHEN \
+LIBDAISY_DIR = ./lib/libDaisy
+DAISYSP_DIR = ./lib/DaisySP
 
 C_INCLUDES += \
 -I. \
 
-C_INCLUDES += -Wno-unused-local-typedefs
+
 
 # Core location, and generic Makefile.
 SYSTEM_FILES_DIR = $(LIBDAISY_DIR)/core
 include $(SYSTEM_FILES_DIR)/Makefile
+
+C_INCLUDES += -Ilib/stmlib
+C_INCLUDES += -Ilib/eurorack
+C_INCLUDES += -Ilib/kxmx_bluemchen/src
+C_INCLUDES += -Wno-unused-local-typedefs

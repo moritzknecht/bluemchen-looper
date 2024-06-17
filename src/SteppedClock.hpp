@@ -1,4 +1,3 @@
-#include <time.h>
 #include "daisy_patch.h"
 
 using namespace daisy;

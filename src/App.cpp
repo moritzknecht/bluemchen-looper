@@ -1,30 +1,40 @@
+#include "./Config.h"
 #include "daisysp.h"
-#include "../bluemchen/kxmx_bluemchen.h"
-#include <string.h>
 #include "AudioLooper.h"
 #include "SteppedClock.hpp"
-#include "../dsp/fx/reverb.h"
+#include "rings/dsp/fx/reverb.h"
+#include "CustomUI.h"
+#include "./UiHardware.h"
+#include "./Helper.h"
 
-using namespace kxmx;
+#ifdef BLUEMCHEN
+#include "kxmx_bluemchen.h"
+#else
+#include "daisy_patch.h"
+#endif
+
 using namespace daisy;
 using namespace daisysp;
-using namespace torus;
+using namespace rings;
 using namespace audiolooper;
 
+#ifdef BLUEMCHEN
+using namespace kxmx;
 Bluemchen hw;
+#else
+DaisyPatch hw;
+#endif
 
+#include "./Menus.h"
+daisy::UI    ui;
+UiEventQueue eventQueue;
 
-// Define the audio buffer size to accommodate 60 seconds of audio at 96kHz sampling rate
-#define kBuffSize 48000 * 87 // 87 seconds at 96kHz
-#define CROSSFADER_RESOLUTION 30
-#define TRIG_TRESHOLD 3500
-#define TRIG_TRESHOLD_LOW 200
 // Allocate memory for the left and right audio buffers
 float DSY_SDRAM_BSS buffer_l[kBuffSize];
 float DSY_SDRAM_BSS buffer_r[kBuffSize];
 
 // Allocate memory for the reverb buffer
-uint16_t reverb_buffer[32768];
+uint16_t reverb_buffer[65536];
 
 // Initialize control variables
 bool shouldRecord  = false;
@@ -55,6 +65,7 @@ Parameter    cv2;
 
 
 // Map a control value from one range to another
+/*
 float mapControl(float x,
                  float in_min,
                  float in_max,
@@ -63,45 +74,60 @@ float mapControl(float x,
 {
     return (x - in_min) * (out_max - out_min) / (in_max - in_min) + out_min;
 }
-
-// Update the OLED display with current information
-void UpdateOled()
-{
-    hw.display.Fill(false);
-
-    hw.display.SetCursor(0, 0);
-    std::string str  = "s ";
-    char       *cstr = &str[0];
-    sprintf(cstr, "s %ld", steppedClock.GetStep());
-    hw.display.WriteString(cstr, Font_6x8, true);
-    /*
-    hw.display.SetCursor(0, 0);
-    std::string str6  = "t ";
-    char       *cstr6 = &str6[0];
-    sprintf(cstr6, "t %d", cv1Val);
-    hw.display.WriteString(cstr6, Font_6x8, true);
 */
-    hw.display.SetCursor(0, 8);
-    std::string str3  = "rec  ";
-    char       *cstr3 = &str3[0];
-    sprintf(cstr3, "rec %d", loopRecorded);
-    hw.display.WriteString(cstr3, Font_6x8, true);
 
-    hw.display.SetCursor(0, 16);
-    std::string str4  = "cf  ";
-    char       *cstr4 = &str4[0];
-    sprintf(cstr4, "cf %d", crossFaderPos);
-    hw.display.WriteString(cstr4, Font_6x8, true);
+void InitUi()
+{
+    UI::SpecialControlIds specialControlIds;
+    specialControlIds.okBttnId
+        = bttnEncoder; // Encoder button is our okay button
+    specialControlIds.menuEncoderId
+        = encoderMain; // Encoder is used as the main menu navigation encoder
 
-    hw.display.SetCursor(0, 24);
-    std::string str5  = "bars  ";
-    char       *cstr5 = &str5[0];
-    sprintf(cstr5, "bars %d", (int)(loopLength / 16));
-    hw.display.WriteString(cstr5, Font_6x8, true);
+    // This is the canvas for the OLED display.
+    UiCanvasDescriptor oledDisplayDescriptor;
+    oledDisplayDescriptor.id_     = canvasOledDisplay; // the unique ID
+    oledDisplayDescriptor.handle_ = &hw.display;   // a pointer to the display
+    oledDisplayDescriptor.updateRateMs_      = 50; // 50ms == 20Hz
+    oledDisplayDescriptor.screenSaverTimeOut = 5 * 1000;
+    // oledDisplayDescriptor.screenSaverOn  = true;
+    oledDisplayDescriptor.clearFunction_ = &ClearCanvas;
+    oledDisplayDescriptor.flushFunction_ = &FlushCanvas;
 
-    hw.display.Update();
+    ui.Init(eventQueue,
+            specialControlIds,
+            {oledDisplayDescriptor},
+            canvasOledDisplay);
 }
 
+
+bool released = true;
+void GenerateUiEvents()
+{
+    if(hw.encoder.TimeHeldMs() >= 1000 && released == true
+       && !hw.encoder.Increment() && mainMenu.GetSelectedItemIdx() == 0)
+    {
+        released = false;
+        eventQueue.AddButtonPressed(bttnEncoder, 1);
+    }
+
+    if(hw.encoder.RisingEdge() && hw.encoder.TimeHeldMs() <= 0
+       && !hw.encoder.Increment() && mainMenu.GetSelectedItemIdx() != 0)
+    {
+        released = false;
+        eventQueue.AddButtonPressed(bttnEncoder, 1);
+    }
+
+    if(hw.encoder.FallingEdge())
+    {
+        released = true;
+        eventQueue.AddButtonReleased(bttnEncoder);
+    }
+
+    const auto increments = hw.encoder.Increment();
+    if(increments != 0)
+        eventQueue.AddEncoderTurned(encoderMain, increments, 12);
+}
 
 // Audio callback function for processing audio and control updates
 void AudioCallback(AudioHandle::InputBuffer  in,
@@ -111,7 +137,9 @@ void AudioCallback(AudioHandle::InputBuffer  in,
     // Process the controls
     hw.ProcessAllControls();
 
+    GenerateUiEvents();
 
+#ifdef BLUEMCHEN
     float cv1_val = cv1.Process();
     bool  trig    = false;
     if(cv1_val >= TRIG_TRESHOLD && last_cv1 < TRIG_TRESHOLD)
@@ -139,21 +167,37 @@ void AudioCallback(AudioHandle::InputBuffer  in,
         reset = false;
     }
     last_cv2 = cv2_val;
+#endif
+#ifndef BLUEMCHEN
 
+    bool trig  = hw.gate_input[0].Trig();
+    bool reset = hw.gate_input[1].Trig();
 
-    bool  newStep = steppedClock.Process(trig, reset);
-    float cutoff  = knob1.Process();
-    float cutoff2 = knob2.Process();
+#endif
 
-    svf_l.SetFreq(cutoff);
-    svf_r.SetFreq(cutoff);
-    // svf2_l.SetFreq(cutoff2);
-    //svf2_r.SetFreq(cutoff2);
+    bool newStep = steppedClock.Process(trig, reset);
+    loopView.SetCurrentStep((int)steppedClock.GetStep());
+
+    float knob1Value = knob1.Process();
+    float knob2Value = knob2.Process();
+
+    float freq1 = mapControl(knob1Value, 0, 1, 20, 20000, "exp");
+    float freq2 = mapControl(knob2Value, 0, 1, 20, 20000, "exp");
+    svf_l.SetFreq(freq1);
+    svf_r.SetFreq(freq1);
+    svf_l.SetRes(fx1ResoValue.Get());
+    svf_r.SetRes(fx1ResoValue.Get());
+
+    reverb.set_amount(fx1RevAmountValue.Get());
+
+    svf2_l.SetFreq(freq2);
+    svf2_r.SetFreq(freq2);
 
     // Map control to loop length
-    float len  = mapControl((float)loopLengthPos, 0.0, 5.0, 0.5, 1.0);
-    loopLength = pow(2, (int)(len * 8));
-
+    /* float len  = mapControl((float)loopLengthPos, 0.0, 5.0, 0.5, 1.0);
+    loopLength = pow(2, (int)(len * 8));*/
+    loopLength = loopLengths[barListValues.GetIndex()];
+    loopView.SetLoopLength(loopLength);
     // Start or stop the looper based on the clock
     if(!steppedClock.GetRunning())
     {
@@ -164,14 +208,15 @@ void AudioCallback(AudioHandle::InputBuffer  in,
     if(steppedClock.GetRunning()
        && (looper_l.GetState() == AudioLooper::State::STOPPED
            || !steppedClock.GetClockRunning())
-       && newStep && steppedClock.GetStep() == 0)
+       && newStep && steppedClock.GetStep() == 0 && loopView.GetEditing())
     {
         looper_l.Start();
         looper_r.Start();
     }
 
     // Toggle recording state on encoder press
-    if(hw.encoder.RisingEdge() && hw.encoder.TimeHeldMs() <= 0.f)
+    if(hw.encoder.RisingEdge() && hw.encoder.TimeHeldMs() <= 0.f
+       && mainMenu.GetSelectedItemIdx() == 0 && loopView.GetEditing())
     {
         shouldRecord = true;
     }
@@ -187,6 +232,7 @@ void AudioCallback(AudioHandle::InputBuffer  in,
             crossFaderPos = CROSSFADER_RESOLUTION;
             fadeLeft.SetPos(1.0);
             fadeRight.SetPos(1.0);
+            loopView.SetCrossFaderPos(crossFaderPos);
         }
     }
 
@@ -199,8 +245,9 @@ void AudioCallback(AudioHandle::InputBuffer  in,
     }
 
     // Clear the loop if the button is held longer than CROSSFADER_RESOLUTION0 ms
-    if(hw.encoder.TimeHeldMs() >= 1000.f && !hw.encoder.Increment()
-       && !preventClear)
+    if(hw.encoder.TimeHeldMs() >= 300.f && hw.encoder.TimeHeldMs() < 1000
+       && hw.encoder.Increment() && !preventClear
+       && mainMenu.GetSelectedItemIdx() == 0 && loopView.GetEditing())
     {
         shouldRecord = false;
         looper_l.Stop();
@@ -212,6 +259,7 @@ void AudioCallback(AudioHandle::InputBuffer  in,
         loopRecorded  = 0;
         fadeLeft.SetPos(0.0);
         fadeRight.SetPos(0.0);
+        loopView.SetCrossFaderPos(crossFaderPos);
     }
 
     if(hw.encoder.TimeHeldMs() >= 300)
@@ -232,7 +280,7 @@ void AudioCallback(AudioHandle::InputBuffer  in,
     {
         preventClear = false;
     }
-
+    /*
     if(hw.encoder.Increment() && hw.encoder.TimeHeldMs() <= 0
        && (looper_l.GetState() == AudioLooper::State::STOPPED
            || looper_l.GetState() == AudioLooper::State::EMPTY))
@@ -240,9 +288,11 @@ void AudioCallback(AudioHandle::InputBuffer  in,
         loopLengthPos += hw.encoder.Increment();
         loopLengthPos = (loopLengthPos % 6 + 6) % 6;
     }
+    */
     if(hw.encoder.Increment() && hw.encoder.TimeHeldMs() <= 0
        && (looper_l.GetState() == AudioLooper::State::PLAYING
-           || looper_l.GetState() == AudioLooper::State::REC_FIRST))
+           || looper_l.GetState() == AudioLooper::State::REC_FIRST)
+       && mainMenu.GetSelectedItemIdx() == 0 && loopView.GetEditing())
     {
         int newValue = crossFaderPos + hw.encoder.Increment();
         if(newValue > CROSSFADER_RESOLUTION)
@@ -257,7 +307,10 @@ void AudioCallback(AudioHandle::InputBuffer  in,
         crossFaderPos = newValue;
         fadeLeft.SetPos((float)crossFaderPos / CROSSFADER_RESOLUTION);
         fadeRight.SetPos((float)crossFaderPos / CROSSFADER_RESOLUTION);
+        loopView.SetCrossFaderPos(crossFaderPos);
     }
+
+    loopView.SetLoopRecorded(loopRecorded);
     /*
     reverb.set_amount(mapControl(cutoff, 20, 20000, 0, 1));
     reverb.set_diffusion(0.625f);
@@ -285,6 +338,8 @@ void AudioCallback(AudioHandle::InputBuffer  in,
         sig_l = svf2_l.Low();
         sig_r = svf2_r.Low();
 
+        reverb.Process(&sig_l, &sig_r, 1);
+
         //loop[0][i] = sig_l;
         // loop[1][i] = sig_r;
         float fade_l = fadeLeft.Process(in_l, sig_l);
@@ -293,38 +348,24 @@ void AudioCallback(AudioHandle::InputBuffer  in,
         float mid  = 0.5f * (fade_l + fade_r);
         float side = 0.5f * (fade_l - fade_r);
 
-        side *= cutoff2;
+        side *= midsideValue.Get();
 
         out[0][i] = mid + side;
         out[1][i] = mid - side;
     }
-    // reverb.Process(loop[0], loop[1], size);
-    /*for(size_t i = 0; i < size; i++)
-    {
-        float in_l = in[0][i];
-        float in_r = in[1][i];
-        out[0][i]  = fadeLeft.Process(in_l, loop[0][i]);
-        out[1][i]  = fadeRight.Process(in_r, loop[1][i]);
-    }*/
 }
 
-// Main function to initialize hardware and start audio processing
-int main(void)
+void Init(float samplerate)
 {
-    hw.Init();
-    // hw.SetAudioSampleRate(daisy::SaiHandle::Config::SampleRate::SAI_48KHZ);
-    hw.StartAdc();
     reverb.Init(reverb_buffer);
 
-    knob1.Init(hw.controls[hw.CTRL_1], 20, 20000, Parameter::LOGARITHMIC);
-    //knob2.Init(hw.controls[hw.CTRL_2], 20, 20000, Parameter::LOGARITHMIC);
-    knob2.Init(hw.controls[hw.CTRL_2], 0.0f, 2.0f, Parameter::LINEAR);
+    knob1.Init(hw.controls[hw.CTRL_1], 0, 1, Parameter::LINEAR);
+    knob2.Init(hw.controls[hw.CTRL_2], 0, 1, Parameter::LINEAR);
+    // knob2.Init(hw.controls[hw.CTRL_2], 0.0f, 2.0f, Parameter::LINEAR);
 
     steppedClock.SetAutoReset(false);
     cv1.Init(hw.controls[hw.CTRL_3], -5000.0f, 5000.0f, Parameter::EXPONENTIAL);
     cv2.Init(hw.controls[hw.CTRL_4], -5000.0f, 5000.0f, Parameter::EXPONENTIAL);
-
-    float samplerate = hw.AudioSampleRate();
 
     looper_l.Init(buffer_l, kBuffSize);
     looper_r.Init(buffer_r, kBuffSize);
@@ -350,11 +391,25 @@ int main(void)
 
     fadeLeft.Init(CROSSFADE_CPOW);
     fadeRight.Init(CROSSFADE_CPOW);
+}
 
+// Main function to initialize hardware and start audio processing
+int main(void)
+{
+    hw.Init();
+    // hw.SetAudioSampleRate(daisy::SaiHandle::Config::SampleRate::SAI_48KHZ);
+    hw.StartAdc();
+
+    float samplerate = hw.AudioSampleRate();
+    Init(samplerate);
+
+    InitUi();
+    InitUiPages();
+    ui.OpenPage(mainMenu);
     hw.StartAudio(AudioCallback);
 
     while(1)
     {
-        UpdateOled();
+        ui.Process();
     }
 }
