@@ -188,7 +188,7 @@ void AudioCallback(AudioHandle::InputBuffer  in,
     svf_l.SetRes(fx1ResoValue.Get());
     svf_r.SetRes(fx1ResoValue.Get());
 
-    reverb.set_amount(fx1RevAmountValue.Get());
+    reverb.set_amount(knob1Value * fx1RevAmountValue.Get());
 
     svf2_l.SetFreq(freq2);
     svf2_r.SetFreq(freq2);
@@ -267,28 +267,11 @@ void AudioCallback(AudioHandle::InputBuffer  in,
         shouldRecord = false;
     }
 
-    /*
-    if(hw.encoder.TimeHeldMs() >= 200.f && hw.encoder.Increment())
-    {
-        preventClear = true;
-        channel += hw.encoder.Increment();
-        channel = (channel % 3 + 3) % 3;
-    }
-    */
-
     if(preventClear && hw.encoder.TimeHeldMs() <= 0.f)
     {
         preventClear = false;
     }
-    /*
-    if(hw.encoder.Increment() && hw.encoder.TimeHeldMs() <= 0
-       && (looper_l.GetState() == AudioLooper::State::STOPPED
-           || looper_l.GetState() == AudioLooper::State::EMPTY))
-    {
-        loopLengthPos += hw.encoder.Increment();
-        loopLengthPos = (loopLengthPos % 6 + 6) % 6;
-    }
-    */
+
     if(hw.encoder.Increment() && hw.encoder.TimeHeldMs() <= 0
        && (looper_l.GetState() == AudioLooper::State::PLAYING
            || looper_l.GetState() == AudioLooper::State::REC_FIRST)

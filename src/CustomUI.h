@@ -161,39 +161,56 @@ class LoopView : public AbstractMenu::CustomItem
                    topRowRect,
                    !isEditing);
         //auto checkboxBounds = remainingBounds.WithSizeKeepingCenter(12, 12);
-        for(int i = 0; i < CROSSFADER_RESOLUTION; i++)
+        int crossfaderHeight = display.GetBounds().GetHeight() / 8;
+        int spacing          = display.GetBounds().GetWidth() / 64;
+
+        if(crossFaderPos > 16)
         {
-            int spacing   = 0;
-            int itemWidth = 128 / CROSSFADER_RESOLUTION;
-            // int x         = i % (itemWidth / 2);
-            // int y         = i / (itemWidth/2);
-            int width  = itemWidth - spacing;
-            int height = 8;
-
-            int x_pos = i * (width + spacing);
-            int y_pos = 32;
-
-            Rectangle rect = Rectangle(x_pos, y_pos, width, height);
-
-            display.DrawRect(rect, true);
-            if(crossFaderPos > i)
-            {
-                display.DrawRect(rect.Reduced(1), true, true);
-            }
+            int itemWidth
+                = display.GetBounds().GetWidth() / CROSSFADER_RESOLUTION;
+            Rectangle rect = Rectangle(display.GetBounds().GetWidth() / 2,
+                                       display.GetBounds().GetHeight() / 2,
+                                       (crossFaderPos - 16) * itemWidth,
+                                       crossfaderHeight);
+            display.DrawRect(rect, true, true);
         }
+        else if(crossFaderPos == 16)
+        {
+            int itemWidth
+                = display.GetBounds().GetWidth() / CROSSFADER_RESOLUTION;
+            Rectangle rect
+                = Rectangle((display.GetBounds().GetWidth() / 2) - itemWidth,
+                            display.GetBounds().GetHeight() / 2,
+                            2 * itemWidth,
+                            crossfaderHeight);
+            display.DrawRect(rect, true, true);
+        }
+        else if(crossFaderPos < 16)
+        {
+            // crossFaderPos 2
+            int posRev = 16 - crossFaderPos; // 14
+            int itemWidth
+                = display.GetBounds().GetWidth() / CROSSFADER_RESOLUTION;
+            Rectangle rect = Rectangle(crossFaderPos * itemWidth,
+                                       display.GetBounds().GetHeight() / 2,
+                                       (posRev * itemWidth) - spacing,
+                                       crossfaderHeight);
+            display.DrawRect(rect, true, true);
+        }
+
+        int barHeight = display.GetBounds().GetHeight() / 8;
 
         for(int i = 0; i < this->loopLength; i++)
         {
-            int spacing   = 2;
-            int itemWidth = 128 / this->loopLength;
+            int itemWidth = display.GetBounds().GetWidth() / this->loopLength;
             // int x         = i % (itemWidth / 2);
             // int y         = i / (itemWidth/2);
-            int width  = itemWidth - spacing;
-            int height = 9;
+            int width = itemWidth - spacing;
 
-            int       x_pos = i * (width + spacing);
-            int       y_pos = 46;
-            Rectangle rect  = Rectangle(x_pos, y_pos, width, height);
+            int x_pos = i * (width + spacing);
+            int y_pos
+                = (display.GetBounds().GetHeight() / 2) + barHeight + spacing;
+            Rectangle rect = Rectangle(x_pos, y_pos, width, barHeight);
 
             display.DrawRect(rect, true);
             if(loopRecorded > i)
@@ -203,12 +220,14 @@ class LoopView : public AbstractMenu::CustomItem
         }
         for(int i = 0; i < 16; i++)
         {
-            int       width   = 6;
-            int       height  = 4;
-            int       spacing = 2;
-            int       x_pos   = i * (width + spacing);
-            int       y_pos   = 58;
-            Rectangle rect    = Rectangle(x_pos, y_pos, width, height);
+            int spacing2 = display.GetBounds().GetWidth() / 64;
+            int width    = (display.GetBounds().GetWidth() / 16) - spacing2;
+            int height   = display.GetBounds().GetHeight() / 8;
+
+            int x_pos = i * (width + spacing);
+            int y_pos = (display.GetBounds().GetHeight() / 2)
+                        + (crossfaderHeight + barHeight + 2 * spacing);
+            Rectangle rect = Rectangle(x_pos, y_pos, width, height);
 
             display.DrawRect(rect, true);
             if(currentStep >= i)

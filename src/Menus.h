@@ -95,7 +95,6 @@ void InitUiPages()
 
     fx1EditMenu.Init(fx1EditMenuItems, kNumfx1EditMenuItems);
 
-
     fx2EditMenuItems[0].type = daisy::AbstractMenu::ItemType::valueItem;
     fx2EditMenuItems[0].text = "Filter Res";
     fx2EditMenuItems[0].asMappedValueItem.valueToModify = &fx1ResoValue;
