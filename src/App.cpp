@@ -26,8 +26,10 @@ DaisyPatch hw;
 #endif
 
 #include "./Menus.h"
-daisy::UI    ui;
-UiEventQueue eventQueue;
+daisy::UI            ui;
+UiEventQueue         eventQueue;
+MidiUartHandler      midi;
+FIFO<MidiEvent, 128> event_log;
 
 // Allocate memory for the left and right audio buffers
 float DSY_SDRAM_BSS buffer_l[kBuffSize];
@@ -46,7 +48,7 @@ int  loopLengthPos = 3;
 bool  preventClear = false;
 float last_cv1     = 0.0f;
 float last_cv2     = 0.0f;
-
+float fadeAmount   = 1.0f;
 // Instantiate DSP components and parameters
 SteppedClock steppedClock;
 Reverb       reverb;
@@ -127,6 +129,25 @@ void GenerateUiEvents()
     const auto increments = hw.encoder.Increment();
     if(increments != 0)
         eventQueue.AddEncoderTurned(encoderMain, increments, 12);
+}
+
+void SmoothCrossfade(float fadeDuration, float deltaTime)
+{
+    if(fadeAmount < 1.0f)
+    {
+        fadeLeft.SetPos(fadeAmount);
+        fadeRight.SetPos(fadeAmount);
+        fadeAmount += (1.0f / fadeDuration) * deltaTime;
+        crossFaderPos
+            = (int)mapControl(fadeAmount, 0, 1, 0, CROSSFADER_RESOLUTION);
+
+        loopView.SetCrossFaderPos(crossFaderPos);
+    }
+}
+
+void ResetCrossfade()
+{
+    fadeAmount = 0.0f; // Reset for the next crossfade
 }
 
 // Audio callback function for processing audio and control updates
@@ -221,6 +242,8 @@ void AudioCallback(AudioHandle::InputBuffer  in,
         shouldRecord = true;
     }
 
+    float deltaTime = (1.0f / 48000.0f);
+    SmoothCrossfade(1.0f, deltaTime);
     // Manage loop recording and stopping
     if(newStep && looper_l.Recording())
     {
@@ -229,10 +252,12 @@ void AudioCallback(AudioHandle::InputBuffer  in,
         {
             looper_l.TrigRecord();
             looper_r.TrigRecord();
-            crossFaderPos = CROSSFADER_RESOLUTION;
-            fadeLeft.SetPos(1.0);
+            // TODO use SmoothCrossfade method
+            /*fadeLeft.SetPos(1.0);
             fadeRight.SetPos(1.0);
-            loopView.SetCrossFaderPos(crossFaderPos);
+            */
+
+            ResetCrossfade();
         }
     }
 
@@ -321,6 +346,7 @@ void AudioCallback(AudioHandle::InputBuffer  in,
         sig_l = svf2_l.Low();
         sig_r = svf2_r.Low();
 
+
         reverb.Process(&sig_l, &sig_r, 1);
 
         //loop[0][i] = sig_l;
@@ -337,6 +363,7 @@ void AudioCallback(AudioHandle::InputBuffer  in,
         out[1][i] = mid - side;
     }
 }
+
 
 void Init(float samplerate)
 {
@@ -365,10 +392,12 @@ void Init(float samplerate)
     svf2_l.Init(samplerate);
     svf2_r.Init(samplerate);
 
+
     svf_l.SetRes(0.0);
     svf_r.SetRes(0.0);
     svf2_l.SetRes(0.0);
     svf2_r.SetRes(0.0);
+
     svf2_l.SetFreq(20000);
     svf2_r.SetFreq(20000);
 
@@ -383,6 +412,7 @@ int main(void)
     // hw.SetAudioSampleRate(daisy::SaiHandle::Config::SampleRate::SAI_48KHZ);
     hw.StartAdc();
 
+
     float samplerate = hw.AudioSampleRate();
     Init(samplerate);
 
@@ -391,8 +421,53 @@ int main(void)
     ui.OpenPage(mainMenu);
     hw.StartAudio(AudioCallback);
 
+
+    MidiUartHandler::Config midi_config;
+    midi.Init(midi_config);
+
+    midi.StartReceive();
+
+
     while(1)
     {
+        midi.Listen();
         ui.Process();
+        while(midi.HasEvents())
+        {
+            MidiEvent msg = midi.PopEvent();
+            if(msg.channel == 1)
+            {
+                switch(msg.type)
+                {
+                    case NoteOn:
+                        // Do something on Note On events
+                        {
+                            //  msg.data[0]
+                            shouldRecord = true;
+                        }
+                        break;
+                    case ControlChange:
+                        // Do something on Note On events
+                        {
+                            uint8_t cc    = msg.data[0];
+                            float   value = mapControl(
+                                (float)msg.data[1], 0, 127, 0, 1, "linear");
+
+                            switch(cc)
+                            {
+                                case 80:
+                                {
+                                    fx1RevAmountValue.Set(value);
+                                }
+                                break;
+
+                                default: break;
+                            }
+                        }
+                        break;
+                    default: break;
+                }
+            }
+        }
     }
 }

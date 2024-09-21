@@ -7,18 +7,34 @@ FullScreenItemMenu fx2EditMenu;
 FullScreenItemMenu reverbEditMenu;
 
 LoopView    loopView;
-const int   loopLengths[] = {16, 32, 64, 128, 256};
-const char *barValues[]   = {"1 Bar", "2 Bars", "4 Bars", "8 Bars", "16 Bars"};
-MappedStringListValue barListValues(barValues, 5, 2);
+const int   loopLengths[] = {16, 32, 64, 128, 256, 512};
+const char *barValues[]
+    = {"1 Bar", "2 Bars", "4 Bars", "8 Bars", "16 Bars", "32 Bars"};
+MappedStringListValue barListValues(barValues, 6, 2);
 
 MappedFloatValue fx1ResoValue
     = MappedFloatValue(0, 1, 0, MappedFloatValue::Mapping::lin, "", 2);
 MappedFloatValue fx1RevAmountValue
     = MappedFloatValue(0, 1, 0, MappedFloatValue::Mapping::lin, "", 2);
+MappedFloatValue fx2ResoValue
+    = MappedFloatValue(0, 1, 0, MappedFloatValue::Mapping::lin, "", 2);
+MappedFloatValue fx2RevAmountValue
+    = MappedFloatValue(0, 1, 0, MappedFloatValue::Mapping::lin, "", 2);
 MappedFloatValue volumeValue
     = MappedFloatValue(0, 1, 1, MappedFloatValue::Mapping::lin, "", 2);
 MappedFloatValue midsideValue
     = MappedFloatValue(0, 2, 1, MappedFloatValue::Mapping::lin, "", 2);
+
+
+MappedFloatValue reverbAmountValue
+    = MappedFloatValue(0, 1, 0, MappedFloatValue::Mapping::lin, "", 2);
+MappedFloatValue reverbWidthValue
+    = MappedFloatValue(0, 1, 0, MappedFloatValue::Mapping::lin, "", 2);
+MappedFloatValue reverbDampValue
+    = MappedFloatValue(0, 1, 0, MappedFloatValue::Mapping::lin, "", 2);
+MappedFloatValue reverbLPValue
+    = MappedFloatValue(0, 1, 0, MappedFloatValue::Mapping::lin, "", 2);
+
 MappedIntValue crossFaderValue
     = MappedIntValue(0, CROSSFADER_RESOLUTION, 0, 1, 1);
 
@@ -97,11 +113,11 @@ void InitUiPages()
 
     fx2EditMenuItems[0].type = daisy::AbstractMenu::ItemType::valueItem;
     fx2EditMenuItems[0].text = "Filter Res";
-    fx2EditMenuItems[0].asMappedValueItem.valueToModify = &fx1ResoValue;
+    fx2EditMenuItems[0].asMappedValueItem.valueToModify = &fx2ResoValue;
 
     fx2EditMenuItems[1].type = daisy::AbstractMenu::ItemType::valueItem;
     fx2EditMenuItems[1].text = "Rev Amount";
-    fx2EditMenuItems[1].asMappedValueItem.valueToModify = &fx1RevAmountValue;
+    fx2EditMenuItems[1].asMappedValueItem.valueToModify = &fx2RevAmountValue;
 
     fx2EditMenuItems[2].type = daisy::AbstractMenu::ItemType::closeMenuItem;
     fx2EditMenuItems[2].text = "Back";
@@ -110,19 +126,19 @@ void InitUiPages()
 
     reverbEditMenuItems[0].type = daisy::AbstractMenu::ItemType::valueItem;
     reverbEditMenuItems[0].text = "Amount";
-    reverbEditMenuItems[0].asMappedValueItem.valueToModify = &fx1ResoValue;
+    reverbEditMenuItems[0].asMappedValueItem.valueToModify = &reverbAmountValue;
 
     reverbEditMenuItems[1].type = daisy::AbstractMenu::ItemType::valueItem;
     reverbEditMenuItems[1].text = "Width";
-    reverbEditMenuItems[1].asMappedValueItem.valueToModify = &fx1RevAmountValue;
+    reverbEditMenuItems[1].asMappedValueItem.valueToModify = &reverbWidthValue;
 
     reverbEditMenuItems[2].type = daisy::AbstractMenu::ItemType::valueItem;
     reverbEditMenuItems[2].text = "Dampening";
-    reverbEditMenuItems[2].asMappedValueItem.valueToModify = &fx1RevAmountValue;
+    reverbEditMenuItems[2].asMappedValueItem.valueToModify = &reverbDampValue;
 
     reverbEditMenuItems[3].type = daisy::AbstractMenu::ItemType::valueItem;
     reverbEditMenuItems[3].text = "LPF";
-    reverbEditMenuItems[3].asMappedValueItem.valueToModify = &fx1RevAmountValue;
+    reverbEditMenuItems[3].asMappedValueItem.valueToModify = &reverbLPValue;
 
     reverbEditMenuItems[4].type = daisy::AbstractMenu::ItemType::closeMenuItem;
     reverbEditMenuItems[4].text = "Back";
