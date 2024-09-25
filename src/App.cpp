@@ -253,11 +253,13 @@ void AudioCallback(AudioHandle::InputBuffer  in,
             looper_l.TrigRecord();
             looper_r.TrigRecord();
             // TODO use SmoothCrossfade method
-            /*fadeLeft.SetPos(1.0);
+            fadeLeft.SetPos(1.0);
             fadeRight.SetPos(1.0);
-            */
+            crossFaderPos = CROSSFADER_RESOLUTION;
 
-            ResetCrossfade();
+            loopView.SetCrossFaderPos(crossFaderPos);
+
+            //ResetCrossfade();
         }
     }
 

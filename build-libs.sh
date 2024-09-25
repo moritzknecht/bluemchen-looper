@@ -1,6 +1,6 @@
 git submodule update --init
 
-cd libDaisy
+cd lib/libDaisy
 make
 cd ../daisysp
 make
